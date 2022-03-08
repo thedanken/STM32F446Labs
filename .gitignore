@@ -1,0 +1,17 @@
+*.bak
+*.htm
+*.o
+*.scvd
+*.dkenn
+*.uvoptx
+*.uvprojx
+*.dbgconf
+*.map
+*.d
+*.axf
+*.lnp
+*.dep
+*.h
+*.s
+*.c
+*.iex
