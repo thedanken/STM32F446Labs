@@ -8,7 +8,7 @@ int main(void) {
 
     while(1) {
 				volatile unsigned int swInput = (GPIOC->IDR & 0x0000F00);
-			  
+			  swInput = (~swInput) & 0x0F00;
 				if(swInput == 0x00000000)
 				{
 					GPIOC->ODR =  0x3F;  /* turn on '0' */

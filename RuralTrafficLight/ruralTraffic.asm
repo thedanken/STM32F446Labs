@@ -33,12 +33,11 @@ L1			ldr     r4, =GPIOA_ODR
 			mov     r0, #5000
             bl      delay					; branch and return to this
 			
-switch0     ldr     r4, =GPIOA_IDR		;GPIOC IDR
-			ldr     r7, =GPIOA_ODR		;GPIOA ODR
+EWsw     	ldr     r4, =GPIOA_IDR		;GPIOC IDR
             ldr     r5 , [r4]			; read port A
 			ldr     r6, =0x0001 		; Mask for PA0
             tst	    r5, r6
-            bne     switch0
+            bne     EWsw
             
 			ldr     r4, =GPIOA_ODR
             ldr     r5, =0x0220    			; NSY, EWR
@@ -54,12 +53,11 @@ switch0     ldr     r4, =GPIOA_IDR		;GPIOC IDR
 			mov     r0, #5000
             bl      delay					; branch and return to this
 			
-switch1     ldr     r4, =GPIOA_IDR		;GPIOC IDR
-			ldr     r7, =GPIOA_ODR		;GPIOA ODR
+NSsw     	ldr     r4, =GPIOA_IDR		;GPIOC IDR
             ldr     r5 , [r4]			; read port A
 			ldr     r6, =0x0002 		; Mask for PA1
             tst	    r5, r6
-            bne     switch1
+            bne     NSsw
             
 			ldr     r4, =GPIOA_ODR
             ldr     r5, =0x0140    			; NSR, EWY

@@ -1,13 +1,14 @@
 #include "stm32f4xx.h"
 int main(void) {
-    RCC->AHB1ENR |=  5;             /* enable GPIOA,GPIOC clock */
+    RCC->AHB1ENR |=  5;             /* enable GPIOC clock */
     
     GPIOC->MODER =  0x00005555;    /* set pin to output mode */
 		GPIOA->MODER =  0x00000000;
-		GPIOC->PUPDR =  0x00550000;
+		GPIOC->PUPDR =  0x00550000;		 /* pull up switch pins */
 
     while(1) {
 				volatile unsigned int swInput = (GPIOC->IDR & 0x0000F00);
+				swInput = (~swInput) & 0xF00;
 			  switch(swInput)
 				{
 					case 0x00000000:

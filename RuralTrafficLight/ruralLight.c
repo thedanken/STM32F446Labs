@@ -13,12 +13,12 @@ int main(void) {
     while(1) {
         GPIOA->ODR = 0x00000210;  /* turn on LED */
         delayMs(500);
-				while((GPIOA->IDR & 0x0001)){}
+				while((GPIOA->IDR & 0x0001)){}	/*East-West switch pressed*/
         GPIOA->ODR = 0x00000220;  /* turn off LED */
         delayMs(2000);
 				GPIOA->ODR = 0x000000C0;  /* turn on LED */
         delayMs(500);
-				while((GPIOA->IDR & 0x0002)) {}
+				while((GPIOA->IDR & 0x0002)) {} /*North-South switch pressed*/
         GPIOA->ODR = 0x00000140;  /* turn off LED */
         delayMs(2000);
     }
