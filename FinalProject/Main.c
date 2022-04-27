@@ -33,29 +33,38 @@ Switch Required Wires:
 PA0		-	EW Sw
 PA1		-	NS Sw
 PB0		- Pedestrian
+PC-13	- Read Mode Switches
 
-Keypad Required Wires:
+Mode Switches
 
 Row
-PC0		-	Pin 5
-PC1		- Pin 6
-PC2		- Pin 7
-PC3		- Pin 8
+PC0		-	Pin 1
+PC1		- Pin 2
+PC2		- Pin 3
+PC3		- Pin 4
+PC8		- Pin 5
+PC9		-	Pin 6
+PC10	- Pin 7
+PC11	- Pin 8
 
-Column
-PC8		- Pin 1
-PC9		-	Pin 2
-PC10	- Pin 3
-PC11	- Pin 4
-
- 1 2 3 A
- 4 5 6 B
- 7 8 9 C
- * 0 # D
+Delay numbers are hexidecimal.
 
  */
 
 #include "stm32f4xx.h"
+#include "string.h"
+#include "stdbool.h"
+
+// Outputs for different lights
+#define NSG	0x40
+#define NSY	0x20
+#define NSR	0x10
+#define EWG	0x200
+#define EWY	0x100
+#define EWR	0x80
+
+#define EWsw 0x01
+#define NSsw 0x02
 
 #define RS 0x04     /* PB2 mask for reg select */
 #define EN 0x08     /* PB3 mask for enable */
@@ -65,6 +74,8 @@ void LCD_nibble_write(char data, unsigned char control);
 void LCD_command(unsigned char command);
 void LCD_data(char data);
 void LCD_init(void);
+void LCD_string(char data[]);
+void crosswalk(void);
 void PORTS_init(void);
 
 
@@ -72,60 +83,84 @@ int main(void) {
     /* initialize LCD controller */
     LCD_init();
 	
-    LCD_data('T');
-    LCD_data('r');
-    LCD_data('a');
-    LCD_data('f');
-    LCD_data('f');
-    LCD_data('i');
-    LCD_data('c');
-    LCD_data(' ');
-    LCD_data('L');
-    LCD_data('i');
-    LCD_data('g');
-    LCD_data('h');
-    LCD_data('t');
+		char output[] = "Traffic Light";
+    LCD_string(output);
 	
 		GPIOA->MODER |=  0x00055500;    /* set pin to output mode */
 		GPIOA->PUPDR |=  0X00000005;
-	
+	/*
+		while(1)
+		{
+        GPIOA->ODR = NSG;
+        delayMs(500);
+        GPIOA->ODR = NSY;
+        delayMs(500);
+        GPIOA->ODR = NSR;
+        delayMs(500);
+        GPIOA->ODR = EWG;
+        delayMs(500);
+        GPIOA->ODR = EWY;
+        delayMs(500);
+        GPIOA->ODR = EWR;
+        delayMs(500);
+		}
+		*/
+		int greenDelay = 1000;
+		int yellowDelay = 500;
+		int redDelay = 500;
+		int CWset = 0;	// crosswalk flag
 		int rrstate = 1;	// 6 State value
 		int rural = 1;	// Road switches
-
+		
     while(1) {
-        GPIOA->ODR = 0x00000210;  /* NSG EWR */
-        delayMs(500);
+        GPIOA->ODR = (NSG | EWR);
+        delayMs(greenDelay);
 			
-				if(rural == 1)
+				if((rural == 1)&&!(CWset == 1))
 				{
-					while((GPIOA->IDR & 0x0001)){}	/*EW switch pressed*/
+					while((GPIOA->IDR & EWsw)){}
 				}
 				
-        GPIOA->ODR = 0x00000220;  /* NSY EWR */
-        delayMs(2000);
+        GPIOA->ODR = (NSY | EWR);
+        delayMs(yellowDelay);
 				
-        if(rrstate == 1)
+        if((rrstate == 1 )||(CWset == 1))
 				{
-					GPIOA->ODR = 0x00000050;  /* NSY EWR */
-					delayMs(2000);
+					GPIOA->ODR = (NSR | EWR);
+					if(!(CWset==1))
+					{
+						delayMs(redDelay);
+					}
+					else
+					{
+						crosswalk();
+					}
 				}
 				
-				GPIOA->ODR = 0x000000C0;  /* NSR EWG*/
-        delayMs(500);
+				GPIOA->ODR = (NSR | EWG);
+        delayMs(greenDelay);
 				
-				if(rural == 1)
+				if((rural == 1)&&!(CWset == 1))
 				{
-					while((GPIOA->IDR & 0x0002)) {} /*North-South switch pressed*/
+					while((GPIOA->IDR & NSsw)) {}
 				}
-        GPIOA->ODR = 0x00000140;  /* NSR EWY */
-        delayMs(2000);
+        GPIOA->ODR = (NSR | EWY);
+        delayMs(yellowDelay);
 				
-				if(rrstate == 1)
+				if((rrstate == 1 )||(CWset == 1))
 				{
-					GPIOA->ODR = 0x00000050;  /* NSR EWR */
-					delayMs(2000);
+					GPIOA->ODR = (NSR | EWR);
+					if(!(CWset==1))
+					{
+						delayMs(redDelay);
+					}
+					else
+					{
+						crosswalk();
+					}
 				}
     }
+		
 		/*
     while(1) {
         LCD_data('I');
@@ -211,6 +246,21 @@ void LCD_command(unsigned char command) {
         delayMs(2);         /* command 1 and 2 needs up to 1.64ms */
     else
         delayMs(1);         /* all others 40 us */
+}
+
+void crosswalk(void)
+{
+	LCD_string("Crosswalk happened");
+	delayMs(1000);
+	LCD_command(1);
+	LCD_string("Traffic Light");
+}
+
+void LCD_string(char data[]) {
+	for(int i=0; i < strlen(data); i++)
+	{
+		LCD_data(data[i]);
+	}
 }
 
 void LCD_data(char data) {
