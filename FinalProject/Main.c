@@ -9,7 +9,7 @@ GND			- Pin 1 on LCD, Pin 5 on LCD, Pin 16/17/18 on LCD (RGB LED)
 VarResistor Middle Terminal - Pin 2 on LCD
 
 7 Segment Display Required Wires:
-PB4		- Pin 7  (a LED)
+PB0 or PB4		- Pin 7  (a LED) - PB4 died on board, remapped. PB4 still retains output and is nicer to wire.
 PB5		- Pin 6  (b LED)
 PB6		- Pin 4  (c LED)
 PB7		- Pin 2  (d LED)
@@ -37,15 +37,10 @@ PC-13	- Read Mode Switches
 
 Mode Switches
 
-Row
 PC0		-	Pin 1
 PC1		- Pin 2
 PC2		- Pin 3
 PC3		- Pin 4
-PC8		- Pin 5
-PC9		-	Pin 6
-PC10	- Pin 7
-PC11	- Pin 8
 
 Delay numbers are hexidecimal.
 
@@ -77,17 +72,40 @@ void LCD_init(void);
 void LCD_string(char data[]);
 void crosswalk(void);
 void PORTS_init(void);
+// Traffic light modes
+void regLight(void);	// All other traffic light modes
+void flashRR(void);
+void flashRY(void);	// NSR, EWY
+void flashYR(void);	// NSY, EWR
+
+// Global Variables
+bool newMode;
+int greenDelay;	// how long for a green light (min for rural)
+int yellowDelay;	// how long for a yellow light
+int redDelay;	// how long for a red light
+bool CWset;	// crosswalk flag
+int nextMode;	// assigned operating mode
+int curMode;	// current operating mode
+int curPanel;
 
 
 int main(void) {
     /* initialize LCD controller */
     LCD_init();
 	
+    GPIOB->MODER |=  0x00555501;    /* set pin to output mode */
+	
 		char output[] = "Traffic Light";
     LCD_string(output);
 	
 		GPIOA->MODER |=  0x00055500;    /* set pin to output mode */
 		GPIOA->PUPDR |=  0X00000005;
+		newMode = false;
+		greenDelay = 1000;
+		yellowDelay = 500;
+		redDelay = 500;
+		CWset = 0;	// crosswalk flag
+		curMode = 0x0B;
 	/*
 		while(1)
 		{
@@ -105,60 +123,28 @@ int main(void) {
         delayMs(500);
 		}
 		*/
-		int greenDelay = 1000;
-		int yellowDelay = 500;
-		int redDelay = 500;
-		int CWset = 0;	// crosswalk flag
-		int rrstate = 1;	// 6 State value
-		int rural = 1;	// Road switches
 		
     while(1) {
-        GPIOA->ODR = (NSG | EWR);
-        delayMs(greenDelay);
-			
-				if((rural == 1)&&!(CWset == 1))
+			if((curMode & 0x04))
+			{
+				if(curMode & 0x01)
 				{
-					while((GPIOA->IDR & EWsw)){}
+					flashRY();
+				}
+				else if(curMode & 0x02)
+				{
+					flashRR();
+				}
+				else
+				{
+					flashYR();
 				}
 				
-        GPIOA->ODR = (NSY | EWR);
-        delayMs(yellowDelay);
-				
-        if((rrstate == 1 )||(CWset == 1))
-				{
-					GPIOA->ODR = (NSR | EWR);
-					if(!(CWset==1))
-					{
-						delayMs(redDelay);
-					}
-					else
-					{
-						crosswalk();
-					}
-				}
-				
-				GPIOA->ODR = (NSR | EWG);
-        delayMs(greenDelay);
-				
-				if((rural == 1)&&!(CWset == 1))
-				{
-					while((GPIOA->IDR & NSsw)) {}
-				}
-        GPIOA->ODR = (NSR | EWY);
-        delayMs(yellowDelay);
-				
-				if((rrstate == 1 )||(CWset == 1))
-				{
-					GPIOA->ODR = (NSR | EWR);
-					if(!(CWset==1))
-					{
-						delayMs(redDelay);
-					}
-					else
-					{
-						crosswalk();
-					}
-				}
+			}
+			else
+			{
+				regLight();
+			}
     }
 		
 		/*
@@ -185,6 +171,107 @@ int main(void) {
         delayMs(1000);
     }
 		*/
+}
+// Modes for traffic light patterns
+void regLight(void)
+{
+	if(!(curMode & 0x08))
+	{
+		// Block cw interrupt here
+	}
+	while(!(newMode))
+	{
+		GPIOA->ODR = (NSG | EWR);
+        delayMs(greenDelay);
+			
+				if((curMode & 0x02)&&!(CWset))
+				{
+					while((GPIOA->IDR & EWsw)){}
+				}
+				
+        GPIOA->ODR = (NSY | EWR);
+        delayMs(yellowDelay);
+				
+        if((curMode & 0x08)||(CWset))
+				{
+					GPIOA->ODR = (NSR | EWR);
+					if(!(CWset))
+					{
+						delayMs(redDelay);
+					}
+					else
+					{
+						crosswalk();
+					}
+				}
+				
+				GPIOA->ODR = (NSR | EWG);
+        delayMs(greenDelay);
+				
+				if((curMode & 0x02)&&!(CWset))
+				{
+					while((GPIOA->IDR & NSsw)) {}
+				}
+        GPIOA->ODR = (NSR | EWY);
+        delayMs(yellowDelay);
+				
+				if((curMode & 0x08)||(CWset))
+				{
+					GPIOA->ODR = (NSR | EWR);
+					if(!(CWset))
+					{
+						delayMs(redDelay);
+					}
+					else
+					{
+						crosswalk();
+					}
+				}
+	}
+	GPIOA->ODR = (NSR | EWR);
+	curMode = nextMode;
+	// Built-in safety delay, rather than suddenly switching lights.
+	delayMs(500);
+}
+
+void flashRR(void)
+{
+	while(!(newMode))
+	{
+		GPIOA->ODR = NSR;
+		delayMs(500);
+		GPIOA->ODR = EWR;
+		delayMs(500);
+	}
+	GPIOA->ODR = (NSR | EWR);
+	curMode = nextMode;
+	delayMs(500);
+}
+void flashRY(void)
+{
+	while(!(newMode))
+	{
+		GPIOA->ODR = NSR;
+		delayMs(500);
+		GPIOA->ODR = EWY;
+		delayMs(500);
+	}
+	GPIOA->ODR = (NSR | EWR);
+	curMode = nextMode;
+	delayMs(500);
+}
+void flashYR(void)
+{
+	while(!(newMode))
+	{
+		GPIOA->ODR = NSY;
+		delayMs(500);
+		GPIOA->ODR = EWR;
+		delayMs(500);
+	}
+	GPIOA->ODR = (NSR | EWR);
+	curMode = nextMode;
+	delayMs(500);
 }
 
 /* initialize GPIOB/C then initialize LCD controller */
@@ -250,10 +337,15 @@ void LCD_command(unsigned char command) {
 
 void crosswalk(void)
 {
-	LCD_string("Crosswalk happened");
-	delayMs(1000);
-	LCD_command(1);
-	LCD_string("Traffic Light");
+		LCD_string("Crosswalk happened");
+		unsigned int bcdo[] = {0x6F1,0x7F1,0x71,0x7D1,0x6D1,0x660,0x4F1,0x5B1,0x60,0x3F1,0x00,0x3F1,0x00,0x3F1,0x00};
+		for(int i=0; i<=14;i++)
+		{
+				GPIOB->ODR = bcdo[i];  /* turn on 7SD */
+				delayMs(500);
+		}
+		LCD_command(1);
+		LCD_string("Traffic Light");
 }
 
 void LCD_string(char data[]) {
