@@ -71,22 +71,39 @@ void LCD_data(char data);
 void LCD_init(void);
 void LCD_string(char data[]);
 void crosswalk(void);
+void panelInput(void);
 void PORTS_init(void);
 // Traffic light modes
 void regLight(void);	// All other traffic light modes
 void flashRR(void);
 void flashRY(void);	// NSR, EWY
 void flashYR(void);	// NSY, EWR
+void swCheck(int s, int c);
 
 // Global Variables
-bool newMode;
 int greenDelay;	// how long for a green light (min for rural)
 int yellowDelay;	// how long for a yellow light
 int redDelay;	// how long for a red light
 bool CWset;	// crosswalk flag
-int nextMode;	// assigned operating mode
-int curMode;	// current operating mode
+
+bool newMode;
+unsigned volatile int nextMode;	// assigned operating mode
+unsigned int curMode;	// current operating mode
 int curPanel;
+static char modeName[12][12] = { 
+	"Urban",
+	"Cross Urban",
+	"Rural",
+	"Cross Rural",
+	"Flash NSY",
+	"Flash EWY",
+	"Flash Red",
+	"",
+	"Red Urban",
+	"Red Urban CW",
+	"Red Rural",
+	"Red Rural CW"
+};
 
 
 int main(void) {
@@ -99,13 +116,36 @@ int main(void) {
     LCD_string(output);
 	
 		GPIOA->MODER |=  0x00055500;    /* set pin to output mode */
-		GPIOA->PUPDR |=  0X00000005;
+		GPIOA->PUPDR |=  0x00000005;
+		GPIOC->PUPDR |=	 0x00000055;
+	
+		__disable_irq();                    /* global disable IRQs */
+
+    RCC->APB2ENR |= 0x4000;             /* enable SYSCFG clock */
+
+    /* configure PC13 for push button interrupt */
+    GPIOC->MODER &= ~0x0C000000;        /* clear pin mode to input mode */
+    
+    SYSCFG->EXTICR[3] &= ~0x00F0;       /* clear port selection for EXTI13 */
+    SYSCFG->EXTICR[3] |= 0x0020;        /* select port C for EXTI13 */
+    
+    EXTI->IMR |= 0x2000;                /* unmask EXTI13 */
+    EXTI->FTSR |= 0x2000;               /* select falling edge trigger */
+
+//    NVIC->ISER[1] = 0x00000100;         /* enable IRQ40 (bit 8 of ISER[1]) */
+    NVIC_EnableIRQ(EXTI15_10_IRQn);
+    
+    __enable_irq();                     /* global enable IRQs */
+	
+	
+	
+	
 		newMode = false;
-		greenDelay = 1000;
-		yellowDelay = 500;
-		redDelay = 500;
-		CWset = 0;	// crosswalk flag
-		curMode = 0x0B;
+		greenDelay = 2000;
+		yellowDelay = 1000;
+		redDelay = 1000;
+		CWset = false;
+		curMode = 0x02;
 	/*
 		while(1)
 		{
@@ -125,6 +165,10 @@ int main(void) {
 		*/
 		
     while(1) {
+			LCD_command(1);
+			delayMs(10);
+			LCD_string(modeName[curMode]);
+			delayMs(10);
 			if((curMode & 0x04))
 			{
 				if(curMode & 0x01)
@@ -146,32 +190,15 @@ int main(void) {
 				regLight();
 			}
     }
-		
-		/*
-    while(1) {
-        LCD_data('I');
-        LCD_data(' ');
-        LCD_data('M');
-        LCD_data('O');
-        LCD_data('V');
-        LCD_data('E');
-        LCD_data('D');
-        LCD_data(' ');
-        LCD_data('R');
-        LCD_data('S');
-        LCD_data(' ');
-        LCD_data('&');
-        LCD_data(' ');
-        LCD_data('E');
-        LCD_data('N');
-        delayMs(1000);
-
-        // LCD Clear
-        LCD_command(1);
-        delayMs(1000);
-    }
-		*/
 }
+void EXTI15_10_IRQHandler(void) {
+	delayMs(250);
+	SysTick->CTRL=0x05;
+	nextMode = (~(GPIOC->IDR) & 0x0F);
+	newMode = true;
+	EXTI->PR = 0x2000;
+}
+
 // Modes for traffic light patterns
 void regLight(void)
 {
@@ -186,7 +213,7 @@ void regLight(void)
 			
 				if((curMode & 0x02)&&!(CWset))
 				{
-					while((GPIOA->IDR & EWsw)){}
+					swCheck(EWsw, curMode & 0x08);
 				}
 				
         GPIOA->ODR = (NSY | EWR);
@@ -210,7 +237,7 @@ void regLight(void)
 				
 				if((curMode & 0x02)&&!(CWset))
 				{
-					while((GPIOA->IDR & NSsw)) {}
+					swCheck(NSsw, curMode & 0x08);
 				}
         GPIOA->ODR = (NSR | EWY);
         delayMs(yellowDelay);
@@ -230,8 +257,22 @@ void regLight(void)
 	}
 	GPIOA->ODR = (NSR | EWR);
 	curMode = nextMode;
+	newMode = false;
 	// Built-in safety delay, rather than suddenly switching lights.
 	delayMs(500);
+}
+
+void swCheck(int s, int c)
+{
+	int check = GPIOA->IDR & s;
+	while(check){
+		check = GPIOA->IDR & s;
+		// The block below is not working in it's current state.
+		if(newMode || (c && CWset))
+		{
+			return;
+		}
+	}
 }
 
 void flashRR(void)
@@ -245,6 +286,7 @@ void flashRR(void)
 	}
 	GPIOA->ODR = (NSR | EWR);
 	curMode = nextMode;
+	newMode = false;
 	delayMs(500);
 }
 void flashRY(void)
@@ -257,8 +299,9 @@ void flashRY(void)
 		delayMs(500);
 	}
 	GPIOA->ODR = (NSR | EWR);
+	delayMs(200);
 	curMode = nextMode;
-	delayMs(500);
+	newMode = false;
 }
 void flashYR(void)
 {
@@ -270,8 +313,9 @@ void flashYR(void)
 		delayMs(500);
 	}
 	GPIOA->ODR = (NSR | EWR);
+	delayMs(200);
 	curMode = nextMode;
-	delayMs(500);
+	newMode = false;
 }
 
 /* initialize GPIOB/C then initialize LCD controller */
@@ -342,7 +386,7 @@ void crosswalk(void)
 		for(int i=0; i<=14;i++)
 		{
 				GPIOB->ODR = bcdo[i];  /* turn on 7SD */
-				delayMs(500);
+				delayMs(1000);
 		}
 		LCD_command(1);
 		LCD_string("Traffic Light");
@@ -362,18 +406,18 @@ void LCD_data(char data) {
     delayMs(1);
 }
 
-/* delay n milliseconds (16 MHz CPU clock) */
+// delay n milliseconds (16 MHz CPU clock) 
 void delayMs(int n) {
     int i;
 
-    /* Configure SysTick */
-    SysTick->LOAD = 16000;  /* reload with number of clocks per millisecond */
-    SysTick->VAL = 0;       /* clear current value register */
-    SysTick->CTRL = 0x5;    /* Enable the timer */
+    // Configure SysTick 
+    SysTick->LOAD = 16000;  // reload with number of clocks per millisecond
+    SysTick->VAL = 0;       // clear current value register
+    SysTick->CTRL = 0x5;    // Enable the timer
 
     for(i = 0; i < n; i++) {
-        while((SysTick->CTRL & 0x10000) == 0) /* wait until the COUNTFLAG is set */
+        while((SysTick->CTRL & 0x10000) == 0) // wait until the COUNTFLAG is set
             { }
     }
-    SysTick->CTRL = 0;      /* Stop the timer (Enable = 0) */
+    SysTick->CTRL = 0;      // Stop the timer (Enable = 0)
 }
