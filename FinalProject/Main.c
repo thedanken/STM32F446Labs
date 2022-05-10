@@ -9,7 +9,7 @@ GND			- Pin 1 on LCD, Pin 5 on LCD, Pin 16/17/18 on LCD (RGB LED)
 VarResistor Middle Terminal - Pin 2 on LCD
 
 7 Segment Display Required Wires:
-PA12, PB0, PB12 or PB4		- Pin 7  (a LED) - PB4 died on board, remapped. PB4 still retains output and is nicer to wire.
+PB4		- Pin 7  (a LED)
 PB5		- Pin 6  (b LED)
 PB6		- Pin 4  (c LED)
 PB7		- Pin 2  (d LED)
@@ -32,8 +32,8 @@ Wire other side to GND
 Switch Required Wires:
 PA0		-	EW Sw
 PA1		-	NS Sw
-PB0		- Pedestrian
-PC-13	- Read Mode Switches
+PC13	- Pedestrian
+PB0		- Read Mode Switches
 
 Mode Switches
 
@@ -44,8 +44,7 @@ PC3		- Pin 4
 
 Delay numbers are hexidecimal.
 
- */
-
+*/
 #include "stm32f4xx.h"
 #include "string.h"
 #include "stdbool.h"
@@ -79,6 +78,8 @@ void Light(void);
 void flash(void);
 void flashYR(void);
 void flashRY(void);
+void EXTI15_10_IRQHandler(void);
+void EXTI0_IRQHandler(void);
 
 // Global Variables
 bool CWset;	// crosswalk flag
@@ -87,37 +88,19 @@ unsigned volatile int nextMode;	// assigned operating mode
 unsigned int curMode;	// current operating mode
 static unsigned int bcdo[] = {0x6F1,0x7F1,0x71,0x7D1,0x6D1,0x660,0x4F1,0x5B1,0x60,0x3F1,0x00,0x3F1,0x00,0x3F1,0x00};
 static unsigned int bcdo1[] = {0x1000,0x1000,0x1000,0x1000,0x1000, 0,0x1000,0x1000, 0,0x1000, 0,0x1000, 0,0x1000, 0};
-static char modeName[12][21] = { 
-	"Current: Urban      ",
-	"Current: Urban X    ",
-	"Current: Rural      ",
-	"Current: Rural X    ",
-	"Current: Flash NSY  ",
-	"Current: Flash EWY  ",
-	"Current: Flash Red  ",
+static char modeName[12][18] = { 
+	"Urban         ",
+	"Urban Cross   ",
+	"Rural         ",
+	"Rural Cross   ",
+	"Flash NSY     ",
+	"Flash EWY     ",
+	"Flash Red     ",
 	"",
-	"Current: Red Urban  ",
-	"Current: Red Urban X",
-	"Current: Red Rural X",
-	"Current: Red Rural X"
-};
-static char time[16][3]= {
-	"0.1",
-	"0.2",
-	"0.3",
-	"0.4",
-	"0.5",
-	"0.6",
-	"0.7",
-	"0.8",
-	"0.9",
-	"1.0",
-	"1.1",
-	"1.2",
-	"1.3",
-	"1.4",
-	"1.5",
-	"1.6"
+	"Red Urban     ",
+	"Red UrbanCross",
+	"Red Rural     ",
+	"Red RuralCross"
 };
 
 
@@ -145,10 +128,8 @@ int main(void) {
     SYSCFG->EXTICR[0] &= ~0x000F;       // clear port selection for EXTI0
     SYSCFG->EXTICR[0] |= 0x0001;        // select port B for EXTI0
 
-    EXTI->IMR |= 0x2001;                /* unmask EXTI13 */
-    EXTI->FTSR |= 0x2001;               /* select falling edge trigger */
-
-//    NVIC->ISER[1] = 0x00000100;         /* enable IRQ40 (bit 8 of ISER[1]) */
+    EXTI->IMR |= 0x0001;                // unmask EXTI0 
+    EXTI->FTSR |= 0x2001;               // select falling edge trigger
     NVIC_EnableIRQ(EXTI15_10_IRQn);
     NVIC_EnableIRQ(EXTI0_IRQn);	
     
@@ -158,6 +139,8 @@ int main(void) {
 		
     while(1) {
 			LCD_command(1);
+			delayMs(10);
+			LCD_string("Mode: ");
 			delayMs(10);
 			LCD_string(modeName[curMode]);
 			delayMs(10);
@@ -192,6 +175,8 @@ void EXTI15_10_IRQHandler(void) {
 void EXTI0_IRQHandler(void) {
 	delayMs(250);
 	nextMode = (~(GPIOC->IDR) & 0x0F);
+	LCD_string("Next: ");
+	delayMs(10);
 	LCD_string(modeName[nextMode]);
 	newMode = true;
 	SysTick->CTRL= 0x05;
@@ -201,6 +186,10 @@ void EXTI0_IRQHandler(void) {
 // Modes for traffic light patterns
 void Light(void)
 {
+	if(curMode & 0x01)
+	{
+		EXTI->IMR |= 0x2000;
+	}
 	newMode = false;
 	while(!(newMode))
 	{
@@ -214,9 +203,9 @@ void Light(void)
 				
         if((curMode & 0x08)||(CWset))
 				{
-					GPIOA->ODR = (NSR | EWR);
 					if(!(CWset))
 					{
+						GPIOA->ODR = (NSR | EWR);
 						delayMs(ryDelay);
 					}
 					else
@@ -224,7 +213,7 @@ void Light(void)
 						for(int i=0; i<=14;i++)
 						{
 							GPIOB->ODR = bcdo[i];  /* turn on 7SD */
-							GPIOA->ODR = bcdo1[i];
+							GPIOA->ODR = bcdo1[i] | (NSR | EWR);
 							delayMs(1000);
 						}
 					}
@@ -245,6 +234,7 @@ void Light(void)
 					GPIOA->ODR = (NSR | EWR);
 					if(!(CWset))
 					{
+						GPIOA->ODR = (NSR | EWR);
 						delayMs(ryDelay);
 					}
 					else
@@ -252,7 +242,7 @@ void Light(void)
 						for(int i=0; i<=14;i++)
 						{
 							GPIOB->ODR = bcdo[i];  /* turn on 7SD */
-							GPIOA->ODR = bcdo1[i];
+							GPIOA->ODR = bcdo1[i] | (NSR | EWR);
 							delayMs(1000);
 						}
 					}
@@ -261,6 +251,7 @@ void Light(void)
 			}
 	GPIOA->ODR = (NSR | EWR);
 	curMode = nextMode;
+	EXTI->IMR &= ~0x2000;
 	delayMs(500);
 }
 
